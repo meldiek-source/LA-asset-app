@@ -611,15 +611,13 @@
       callApi('getConfig', [])
         .then(cfg => {
           CONFIG = cfg;
-          // These two are the actual EDIT targets — restricted to only
-          // the stores this email is allowed to touch, enforced above
-          // (server-side) as well as here (so there's nothing to select
-          // that would just get rejected anyway).
+          // The server now only ever returns riders from this login's own
+          // store(s) — so every store-facing dropdown here is restricted
+          // to ALLOWED_STORES, not the full store list. Nothing shown can
+          // return empty because it wasn't accessible in the first place.
           fillSelect(document.getElementById('ds-store'), ALLOWED_STORES);
           fillSelect(document.getElementById('rd-store'), ALLOWED_STORES);
-          // Browsing "All Riders" stays unrestricted — viewing other
-          // stores' riders is fine, only editing is restricted.
-          fillSelect(document.getElementById('rd-store-filter'), cfg.stores, true);
+          fillSelect(document.getElementById('rd-store-filter'), ALLOWED_STORES, true);
           fillSelect(document.getElementById('rd-vendor-filter'), cfg.vendors, true);
           fillSelect(document.getElementById('rd-vendor'), cfg.vendors);
 
