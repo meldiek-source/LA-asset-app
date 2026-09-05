@@ -220,6 +220,7 @@
   <div class="tabs">
     <div class="tab active" data-panel="rider">Riders assets</div>
     <div class="tab" data-panel="store">Stores inventory</div>
+    <div class="tab" data-panel="returns">Terminated riders returns</div>
   </div>
 
   <div class="panel active" id="panel-rider">
@@ -307,6 +308,52 @@
     </div>
   </div>
 
+  <!-- TERMINATED RIDER RETURNS (record table + single-record edit only —
+       no dashboard stats/charts, no bulk upload, by design) -->
+  <div class="panel" id="panel-returns">
+    <div class="card" id="ret-form-card">
+      <strong>Record a terminated rider's asset return</strong>
+      <div class="row">
+        <div>
+          <label>Rider ID</label>
+          <input type="text" id="ret-id" placeholder="e.g. DA-1042" onblur="lookupReturn()">
+        </div>
+        <div>
+          <label>Rider Name</label>
+          <input type="text" id="ret-name" placeholder="Full name">
+        </div>
+        <div>
+          <label>Store</label>
+          <select id="ret-store"></select>
+        </div>
+        <div>
+          <label>Vendor</label>
+          <select id="ret-vendor"></select>
+        </div>
+      </div>
+      <div class="row" id="ret-toggle-grid" style="margin-top:6px;"></div>
+      <button onclick="submitReturn()">Save Return Record</button>
+      <div class="status" id="ret-status"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="align-items:center;">
+        <div><strong>All Return Records</strong></div>
+        <div style="flex:1; min-width:160px;">
+          <label>Filter by vendor</label>
+          <select id="ret-vendor-filter" onchange="renderReturnsTable()">
+            <option value="All">All</option>
+          </select>
+        </div>
+        <div style="flex:1; min-width:220px;">
+          <label>Search rider name or ID</label>
+          <input type="text" id="ret-search" placeholder="e.g. DA-2201 or Karim" oninput="renderReturnsTable()">
+        </div>
+      </div>
+      <table id="ret-table"><thead><tr id="ret-table-head"></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
   <div style="text-align:center; padding-top:20px;">
     <button id="logout-btn" onclick="logout()">Log out</button>
   </div>
@@ -314,11 +361,13 @@
 
   </div> <!-- /#app-wrap -->
 
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbzgGTyuzP95x4oCSTA5Ga5Ow8FNNb2gdCTvh_wrIeXVFDHrJW1WbhtH-diU0bl1UWjgkw/exec';
 
     let CONFIG = null;
+    let returnToggles = {}; // { Helmet: true/false, 'Delivery box': true/false }
     let SESSION_TOKEN = null;
 
     // ---- Browser-side cache (mirrors the server's short-lived cache) ----
@@ -544,7 +593,7 @@
       }
     }, 30 * 1000);
     // ---- Tabs ----
-    const ALL_TABS = ['rider', 'store'];
+    const ALL_TABS = ['rider', 'store', 'returns'];
 
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -564,6 +613,7 @@
         document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
         try { localStorage.setItem(ACTIVE_TAB_KEY, tab.dataset.panel); } catch (e) {}
         if (tab.dataset.panel === 'store') loadStoreStock();
+        if (tab.dataset.panel === 'returns') loadReturns();
         if (tab.dataset.panel === 'rider') loadRiders();
       });
     });
@@ -642,6 +692,28 @@
               <input type="number" min="0" class="ds-asset-input" data-cat="${cat}" placeholder="0" value="0">
             </div>
           `).join('');
+
+          // Terminated riders returns
+          fillSelect(document.getElementById('ret-store'), ALLOWED_STORES);
+          fillSelect(document.getElementById('ret-vendor'), cfg.vendors);
+          fillSelect(document.getElementById('ret-vendor-filter'), cfg.vendors, true);
+
+          returnToggles = {};
+          cfg.returnCategories.forEach(cat => returnToggles[cat] = false);
+          const retGrid = document.getElementById('ret-toggle-grid');
+          retGrid.innerHTML = cfg.returnCategories.map(cat => `
+            <div>
+              <label>${cat === 'Delivery box' ? 'Box' : cat} returned?</label>
+              <div class="toggle-pair" data-cat="${cat}">
+                <div class="toggle-btn on-yes" onclick="setReturnToggle('${cat}', true)">Yes</div>
+                <div class="toggle-btn on-no selected" onclick="setReturnToggle('${cat}', false)">No</div>
+              </div>
+            </div>
+          `).join('');
+
+          document.getElementById('ret-table-head').innerHTML =
+            ['Rider ID','Name','Store','Vendor'].concat(cfg.returnCategories.map(c => (c === 'Delivery box' ? 'Box' : c) + ' Returned')).concat(['Date Recorded', ''])
+              .map(h => `<th>${h}</th>`).join('');
 
           // Only load data for whichever tab will actually be shown first.
           restoreActiveTab();
@@ -962,6 +1034,126 @@
       const b = String(filterStore || '').trim().toLowerCase();
       if (!a || !b) return false;
       return a.startsWith(b) || a.includes(b);
+    }
+
+    // ---- Terminated riders returns ----
+    function isReturnedTruthy(v) {
+      if (v === true) return true;
+      const s = String(v || '').trim().toUpperCase();
+      return s === 'TRUE' || s === 'YES' || s === 'Y' || s === '1';
+    }
+
+    function setReturnToggle(cat, value) {
+      returnToggles[cat] = value;
+      const pair = document.querySelector(`.toggle-pair[data-cat="${cat}"]`);
+      pair.querySelector('.on-yes').classList.toggle('selected', value === true);
+      pair.querySelector('.on-no').classList.toggle('selected', value === false);
+    }
+
+    function lookupReturn() {
+      const id = document.getElementById('ret-id').value.trim();
+      if (!id) return;
+      const status = document.getElementById('ret-status');
+      callApi('getRiderReturnById', [id])
+        .then(rec => {
+          if (!rec) return; // not found, or not yours — server already hides it either way
+          if (!isMyStore(rec.Store)) {
+            status.textContent = `${rec.RiderID} belongs to ${rec.Store}, which you don't have access to. You can only edit records at: ${ALLOWED_STORES.join(', ')}.`;
+            status.className = 'status err';
+            document.getElementById('ret-id').value = '';
+            return;
+          }
+          document.getElementById('ret-name').value = rec.RiderName || '';
+          document.getElementById('ret-store').value = rec.Store || '';
+          document.getElementById('ret-vendor').value = rec.Vendor || '';
+          CONFIG.returnCategories.forEach(cat => {
+            setReturnToggle(cat, isReturnedTruthy(rec[cat + 'Returned']));
+          });
+        })
+        .catch(err => showGlobalError('return lookup (getRiderReturnById)', err));
+    }
+
+    function submitReturn() {
+      const id = document.getElementById('ret-id').value.trim();
+      const name = document.getElementById('ret-name').value.trim();
+      const store = document.getElementById('ret-store').value;
+      const vendor = document.getElementById('ret-vendor').value;
+      const status = document.getElementById('ret-status');
+      if (!id || !name) {
+        status.textContent = 'Rider ID and Name are required.';
+        status.className = 'status err';
+        return;
+      }
+      status.textContent = 'Saving...'; status.className = 'status';
+      callApi('saveRiderReturn', [id, name, store, vendor, returnToggles])
+        .then(() => {
+          status.textContent = 'Saved.';
+          status.className = 'status ok';
+          loadReturns();
+        })
+        .catch(err => { status.textContent = err.message; status.className = 'status err'; });
+    }
+
+    let RETURN_ROWS = [];
+
+    function loadReturns() {
+      document.querySelector('#ret-table tbody').innerHTML =
+        loadingBarRowHtml(4 + CONFIG.returnCategories.length + 2);
+      callApi('getRiderReturns', [])
+        .then(rows => {
+          RETURN_ROWS = rows;
+          renderReturnsTable();
+        })
+        .catch(err => showGlobalError('return records (getRiderReturns)', err));
+    }
+
+    function renderReturnsTable() {
+      const vendorFilter = document.getElementById('ret-vendor-filter').value;
+      const searchText = document.getElementById('ret-search').value.trim().toLowerCase();
+
+      let rows = RETURN_ROWS;
+      if (vendorFilter !== 'All') rows = rows.filter(r => (r.Vendor || 'Unspecified/Blank') === vendorFilter);
+      if (searchText) {
+        rows = rows.filter(r =>
+          String(r.RiderID || '').toLowerCase().includes(searchText) ||
+          String(r.RiderName || '').toLowerCase().includes(searchText)
+        );
+      }
+
+      const tbody = document.querySelector('#ret-table tbody');
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${4 + CONFIG.returnCategories.length + 2}" class="muted">No matching records.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(r => {
+        const cats = CONFIG.returnCategories.map(c => {
+          const val = isReturnedTruthy(r[c + 'Returned']);
+          return `<td><span class="yn-badge ${val ? 'yes' : 'no'}">${val ? 'Yes' : 'No'}</span></td>`;
+        }).join('');
+        return `<tr><td>${r.RiderID}</td><td>${r.RiderName}</td><td>${r.Store || ''}</td><td>${r.Vendor || ''}</td>${cats}<td>${fmtDate(r.DateRecorded)}</td>
+          <td><button class="secondary" style="margin:0;" onclick="editReturnRecord('${String(r.RiderID).replace(/'/g,"\\'")}')">Update Status</button></td></tr>`;
+      }).join('');
+    }
+
+    function editReturnRecord(riderId) {
+      const rec = RETURN_ROWS.find(r => String(r.RiderID) === String(riderId));
+      if (!rec) return;
+      const status = document.getElementById('ret-status');
+      if (!isMyStore(rec.Store)) {
+        status.textContent = `You don't have access to ${rec.RiderID}'s store (${rec.Store}).`;
+        status.className = 'status err';
+        return;
+      }
+      document.getElementById('ret-id').value = rec.RiderID;
+      document.getElementById('ret-name').value = rec.RiderName || '';
+      document.getElementById('ret-store').value = rec.Store || '';
+      document.getElementById('ret-vendor').value = rec.Vendor || '';
+      CONFIG.returnCategories.forEach(cat => {
+        setReturnToggle(cat, isReturnedTruthy(rec[cat + 'Returned']));
+      });
+      document.getElementById('ret-form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      status.textContent = 'Editing ' + rec.RiderID + ' — change the Yes/No toggles below, then click Save Return Record.';
+      status.className = 'status';
     }
 
     function fmtDate(d) {
