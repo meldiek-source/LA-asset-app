@@ -311,28 +311,27 @@
   <!-- TERMINATED RIDER RETURNS (record table + single-record edit only —
        no dashboard stats/charts, no bulk upload, by design) -->
   <div class="panel" id="panel-returns">
-    <div class="card" id="ret-form-card">
-      <strong>Record a terminated rider's asset return</strong>
-      <div class="row">
-        <div>
-          <label>Rider ID</label>
-          <input type="text" id="ret-id" placeholder="e.g. DA-1042" onblur="lookupReturn()">
-        </div>
+    <div class="card" id="ret-form-card" style="display:none;">
+      <strong>Update return status — <span id="ret-editing-label"></span></strong>
+      <div class="muted">Click "Update Status" on a record below to edit it here. You can't create a new record from this form — only existing terminated riders' status can be changed.</div>
+      <input type="hidden" id="ret-id">
+      <div class="row" style="margin-top:10px;">
         <div>
           <label>Rider Name</label>
-          <input type="text" id="ret-name" placeholder="Full name">
+          <div id="ret-name-display" style="padding:10px 12px; background:var(--card2); border:1px solid var(--border); border-radius:6px;"></div>
         </div>
         <div>
           <label>Store</label>
-          <select id="ret-store"></select>
+          <div id="ret-store-display" style="padding:10px 12px; background:var(--card2); border:1px solid var(--border); border-radius:6px;"></div>
         </div>
         <div>
           <label>Vendor</label>
-          <select id="ret-vendor"></select>
+          <div id="ret-vendor-display" style="padding:10px 12px; background:var(--card2); border:1px solid var(--border); border-radius:6px;"></div>
         </div>
       </div>
       <div class="row" id="ret-toggle-grid" style="margin-top:6px;"></div>
       <button onclick="submitReturn()">Save Return Record</button>
+      <button class="ghost" onclick="cancelEditReturn()">Cancel</button>
       <div class="status" id="ret-status"></div>
     </div>
 
@@ -693,9 +692,9 @@
             </div>
           `).join('');
 
-          // Terminated riders returns
-          fillSelect(document.getElementById('ret-store'), ALLOWED_STORES);
-          fillSelect(document.getElementById('ret-vendor'), cfg.vendors);
+          // Terminated riders returns — Store/Vendor are now read-only
+          // displays populated only when editing an existing record, not
+          // editable dropdowns, so only the vendor filter needs options.
           fillSelect(document.getElementById('ret-vendor-filter'), cfg.vendors, true);
 
           returnToggles = {};
@@ -1050,48 +1049,32 @@
       pair.querySelector('.on-no').classList.toggle('selected', value === false);
     }
 
-    function lookupReturn() {
-      const id = document.getElementById('ret-id').value.trim();
-      if (!id) return;
-      const status = document.getElementById('ret-status');
-      callApi('getRiderReturnById', [id])
-        .then(rec => {
-          if (!rec) return; // not found, or not yours — server already hides it either way
-          if (!isMyStore(rec.Store)) {
-            status.textContent = `${rec.RiderID} belongs to ${rec.Store}, which you don't have access to. You can only edit records at: ${ALLOWED_STORES.join(', ')}.`;
-            status.className = 'status err';
-            document.getElementById('ret-id').value = '';
-            return;
-          }
-          document.getElementById('ret-name').value = rec.RiderName || '';
-          document.getElementById('ret-store').value = rec.Store || '';
-          document.getElementById('ret-vendor').value = rec.Vendor || '';
-          CONFIG.returnCategories.forEach(cat => {
-            setReturnToggle(cat, isReturnedTruthy(rec[cat + 'Returned']));
-          });
-        })
-        .catch(err => showGlobalError('return lookup (getRiderReturnById)', err));
-    }
+    let CURRENT_EDITING_RETURN = null; // the record currently loaded into the edit form
 
     function submitReturn() {
-      const id = document.getElementById('ret-id').value.trim();
-      const name = document.getElementById('ret-name').value.trim();
-      const store = document.getElementById('ret-store').value;
-      const vendor = document.getElementById('ret-vendor').value;
       const status = document.getElementById('ret-status');
-      if (!id || !name) {
-        status.textContent = 'Rider ID and Name are required.';
+      if (!CURRENT_EDITING_RETURN) {
+        status.textContent = 'Nothing is being edited — click "Update Status" on a record first.';
         status.className = 'status err';
         return;
       }
+      const { RiderID, RiderName, Store, Vendor } = CURRENT_EDITING_RETURN;
       status.textContent = 'Saving...'; status.className = 'status';
-      callApi('saveRiderReturn', [id, name, store, vendor, returnToggles])
+      callApi('saveRiderReturn', [RiderID, RiderName, Store, Vendor, returnToggles])
         .then(() => {
           status.textContent = 'Saved.';
           status.className = 'status ok';
+          cancelEditReturn();
           loadReturns();
         })
         .catch(err => { status.textContent = err.message; status.className = 'status err'; });
+    }
+
+    function cancelEditReturn() {
+      CURRENT_EDITING_RETURN = null;
+      document.getElementById('ret-form-card').style.display = 'none';
+      document.getElementById('ret-status').textContent = '';
+      document.getElementById('ret-status').className = 'status';
     }
 
     let RETURN_ROWS = [];
@@ -1144,15 +1127,19 @@
         status.className = 'status err';
         return;
       }
+      CURRENT_EDITING_RETURN = rec;
       document.getElementById('ret-id').value = rec.RiderID;
-      document.getElementById('ret-name').value = rec.RiderName || '';
-      document.getElementById('ret-store').value = rec.Store || '';
-      document.getElementById('ret-vendor').value = rec.Vendor || '';
+      document.getElementById('ret-editing-label').textContent = rec.RiderID + ' — ' + (rec.RiderName || '');
+      document.getElementById('ret-name-display').textContent = rec.RiderName || '';
+      document.getElementById('ret-store-display').textContent = rec.Store || '';
+      document.getElementById('ret-vendor-display').textContent = rec.Vendor || '';
       CONFIG.returnCategories.forEach(cat => {
         setReturnToggle(cat, isReturnedTruthy(rec[cat + 'Returned']));
       });
-      document.getElementById('ret-form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      status.textContent = 'Editing ' + rec.RiderID + ' — change the Yes/No toggles below, then click Save Return Record.';
+      const card = document.getElementById('ret-form-card');
+      card.style.display = 'block';
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      status.textContent = 'Change the Yes/No toggles below, then click Save Return Record.';
       status.className = 'status';
     }
 
