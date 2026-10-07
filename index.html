@@ -147,28 +147,6 @@
     .flag-group-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
     .no-flags { color: var(--good); font-size: 15px; }
 
-    /* Stat pills */
-    .stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
-    .stat-box { flex: 1; min-width: 140px; background: var(--card2); border-radius: 10px; padding: 14px 16px; text-align: center; }
-    .stat-box .num { font-size: 28px; font-weight: 800; color: var(--primary); }
-    .stat-box .lbl { font-size: 13px; color: var(--muted); margin-top: 2px; }
-    .stat-box .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
-    .stat-box.green .num { color: var(--good); }
-    .stat-box.red .num { color: var(--danger); }
-    .yn-badge {
-      display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;
-    }
-    .yn-badge.yes { background: rgba(126,231,135,0.15); color: var(--good); border: 1px solid rgba(126,231,135,0.4); }
-    .yn-badge.no { background: rgba(255,107,107,0.15); color: var(--danger); border: 1px solid rgba(255,107,107,0.4); }
-
-    /* Toggle pills for returns Yes/No */
-    .toggle-pair { display: flex; gap: 6px; margin-top: 6px; }
-    .toggle-btn {
-      flex: 1; text-align: center; padding: 9px; border-radius: 6px; border: 1px solid var(--border);
-      background: var(--card2); color: var(--muted); cursor: pointer; font-size: 14px; font-weight: 600;
-    }
-    .toggle-btn.on-yes.selected { background: var(--good); color: #0e0f0c; border-color: var(--good); }
-    .toggle-btn.on-no.selected { background: var(--danger); color: #0e0f0c; border-color: var(--danger); }
 
     /* Requests tab — distinct color to separate it visually from the rest of the app */
     :root { --req-accent: #FF9F1C; }
@@ -220,7 +198,6 @@
   <div class="tabs">
     <div class="tab active" data-panel="rider">Riders assets</div>
     <div class="tab" data-panel="store">Stores inventory</div>
-    <div class="tab" data-panel="returns">Terminated riders returns</div>
   </div>
 
   <div class="panel active" id="panel-rider">
@@ -308,51 +285,6 @@
     </div>
   </div>
 
-  <!-- TERMINATED RIDER RETURNS (record table + single-record edit only —
-       no dashboard stats/charts, no bulk upload, by design) -->
-  <div class="panel" id="panel-returns">
-    <div class="card" id="ret-form-card" style="display:none;">
-      <strong>Update return status — <span id="ret-editing-label"></span></strong>
-      <div class="muted">Click "Update Status" on a record below to edit it here. You can't create a new record from this form — only existing terminated riders' status can be changed.</div>
-      <input type="hidden" id="ret-id">
-      <div class="row" style="margin-top:10px;">
-        <div>
-          <label>Rider Name</label>
-          <div id="ret-name-display" style="padding:10px 12px; background:var(--card2); border:1px solid var(--border); border-radius:6px;"></div>
-        </div>
-        <div>
-          <label>Store</label>
-          <div id="ret-store-display" style="padding:10px 12px; background:var(--card2); border:1px solid var(--border); border-radius:6px;"></div>
-        </div>
-        <div>
-          <label>Vendor</label>
-          <div id="ret-vendor-display" style="padding:10px 12px; background:var(--card2); border:1px solid var(--border); border-radius:6px;"></div>
-        </div>
-      </div>
-      <div class="row" id="ret-toggle-grid" style="margin-top:6px;"></div>
-      <button onclick="submitReturn()">Save Return Record</button>
-      <button class="ghost" onclick="cancelEditReturn()">Cancel</button>
-      <div class="status" id="ret-status"></div>
-    </div>
-
-    <div class="card">
-      <div class="row" style="align-items:center;">
-        <div><strong>All Return Records</strong></div>
-        <div style="flex:1; min-width:160px;">
-          <label>Filter by vendor</label>
-          <select id="ret-vendor-filter" onchange="renderReturnsTable()">
-            <option value="All">All</option>
-          </select>
-        </div>
-        <div style="flex:1; min-width:220px;">
-          <label>Search rider name or ID</label>
-          <input type="text" id="ret-search" placeholder="e.g. DA-2201 or Karim" oninput="renderReturnsTable()">
-        </div>
-      </div>
-      <table id="ret-table"><thead><tr id="ret-table-head"></tr></thead><tbody></tbody></table>
-    </div>
-  </div>
-
   <div style="text-align:center; padding-top:20px;">
     <button id="logout-btn" onclick="logout()">Log out</button>
   </div>
@@ -366,7 +298,6 @@
     const API_URL = 'https://script.google.com/macros/s/AKfycbzgGTyuzP95x4oCSTA5Ga5Ow8FNNb2gdCTvh_wrIeXVFDHrJW1WbhtH-diU0bl1UWjgkw/exec';
 
     let CONFIG = null;
-    let returnToggles = {}; // { Helmet: true/false, 'Delivery box': true/false }
     let SESSION_TOKEN = null;
 
     // ---- Browser-side cache (mirrors the server's short-lived cache) ----
@@ -592,7 +523,7 @@
       }
     }, 30 * 1000);
     // ---- Tabs ----
-    const ALL_TABS = ['rider', 'store', 'returns'];
+    const ALL_TABS = ['rider', 'store'];
 
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -612,7 +543,6 @@
         document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
         try { localStorage.setItem(ACTIVE_TAB_KEY, tab.dataset.panel); } catch (e) {}
         if (tab.dataset.panel === 'store') loadStoreStock();
-        if (tab.dataset.panel === 'returns') loadReturns();
         if (tab.dataset.panel === 'rider') loadRiders();
       });
     });
@@ -691,28 +621,6 @@
               <input type="number" min="0" class="ds-asset-input" data-cat="${cat}" placeholder="0" value="0">
             </div>
           `).join('');
-
-          // Terminated riders returns — Store/Vendor are now read-only
-          // displays populated only when editing an existing record, not
-          // editable dropdowns, so only the vendor filter needs options.
-          fillSelect(document.getElementById('ret-vendor-filter'), cfg.vendors, true);
-
-          returnToggles = {};
-          cfg.returnCategories.forEach(cat => returnToggles[cat] = false);
-          const retGrid = document.getElementById('ret-toggle-grid');
-          retGrid.innerHTML = cfg.returnCategories.map(cat => `
-            <div>
-              <label>${cat === 'Delivery box' ? 'Box' : cat} returned?</label>
-              <div class="toggle-pair" data-cat="${cat}">
-                <div class="toggle-btn on-yes" onclick="setReturnToggle('${cat}', true)">Yes</div>
-                <div class="toggle-btn on-no selected" onclick="setReturnToggle('${cat}', false)">No</div>
-              </div>
-            </div>
-          `).join('');
-
-          document.getElementById('ret-table-head').innerHTML =
-            ['Rider ID','Name','Store','Vendor'].concat(cfg.returnCategories.map(c => (c === 'Delivery box' ? 'Box' : c) + ' Returned')).concat(['Date Recorded', ''])
-              .map(h => `<th>${h}</th>`).join('');
 
           // Only load data for whichever tab will actually be shown first.
           restoreActiveTab();
@@ -1033,114 +941,6 @@
       const b = String(filterStore || '').trim().toLowerCase();
       if (!a || !b) return false;
       return a.startsWith(b) || a.includes(b);
-    }
-
-    // ---- Terminated riders returns ----
-    function isReturnedTruthy(v) {
-      if (v === true) return true;
-      const s = String(v || '').trim().toUpperCase();
-      return s === 'TRUE' || s === 'YES' || s === 'Y' || s === '1';
-    }
-
-    function setReturnToggle(cat, value) {
-      returnToggles[cat] = value;
-      const pair = document.querySelector(`.toggle-pair[data-cat="${cat}"]`);
-      pair.querySelector('.on-yes').classList.toggle('selected', value === true);
-      pair.querySelector('.on-no').classList.toggle('selected', value === false);
-    }
-
-    let CURRENT_EDITING_RETURN = null; // the record currently loaded into the edit form
-
-    function submitReturn() {
-      const status = document.getElementById('ret-status');
-      if (!CURRENT_EDITING_RETURN) {
-        status.textContent = 'Nothing is being edited — click "Update Status" on a record first.';
-        status.className = 'status err';
-        return;
-      }
-      const { RiderID, RiderName, Store, Vendor } = CURRENT_EDITING_RETURN;
-      status.textContent = 'Saving...'; status.className = 'status';
-      callApi('saveRiderReturn', [RiderID, RiderName, Store, Vendor, returnToggles])
-        .then(() => {
-          status.textContent = 'Saved.';
-          status.className = 'status ok';
-          cancelEditReturn();
-          loadReturns();
-        })
-        .catch(err => { status.textContent = err.message; status.className = 'status err'; });
-    }
-
-    function cancelEditReturn() {
-      CURRENT_EDITING_RETURN = null;
-      document.getElementById('ret-form-card').style.display = 'none';
-      document.getElementById('ret-status').textContent = '';
-      document.getElementById('ret-status').className = 'status';
-    }
-
-    let RETURN_ROWS = [];
-
-    function loadReturns() {
-      document.querySelector('#ret-table tbody').innerHTML =
-        loadingBarRowHtml(4 + CONFIG.returnCategories.length + 2);
-      callApi('getRiderReturns', [])
-        .then(rows => {
-          RETURN_ROWS = rows;
-          renderReturnsTable();
-        })
-        .catch(err => showGlobalError('return records (getRiderReturns)', err));
-    }
-
-    function renderReturnsTable() {
-      const vendorFilter = document.getElementById('ret-vendor-filter').value;
-      const searchText = document.getElementById('ret-search').value.trim().toLowerCase();
-
-      let rows = RETURN_ROWS;
-      if (vendorFilter !== 'All') rows = rows.filter(r => (r.Vendor || 'Unspecified/Blank') === vendorFilter);
-      if (searchText) {
-        rows = rows.filter(r =>
-          String(r.RiderID || '').toLowerCase().includes(searchText) ||
-          String(r.RiderName || '').toLowerCase().includes(searchText)
-        );
-      }
-
-      const tbody = document.querySelector('#ret-table tbody');
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${4 + CONFIG.returnCategories.length + 2}" class="muted">No matching records.</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = rows.map(r => {
-        const cats = CONFIG.returnCategories.map(c => {
-          const val = isReturnedTruthy(r[c + 'Returned']);
-          return `<td><span class="yn-badge ${val ? 'yes' : 'no'}">${val ? 'Yes' : 'No'}</span></td>`;
-        }).join('');
-        return `<tr><td>${r.RiderID}</td><td>${r.RiderName}</td><td>${r.Store || ''}</td><td>${r.Vendor || ''}</td>${cats}<td>${fmtDate(r.DateRecorded)}</td>
-          <td><button class="secondary" style="margin:0;" onclick="editReturnRecord('${String(r.RiderID).replace(/'/g,"\\'")}')">Update Status</button></td></tr>`;
-      }).join('');
-    }
-
-    function editReturnRecord(riderId) {
-      const rec = RETURN_ROWS.find(r => String(r.RiderID) === String(riderId));
-      if (!rec) return;
-      const status = document.getElementById('ret-status');
-      if (!isMyStore(rec.Store)) {
-        status.textContent = `You don't have access to ${rec.RiderID}'s store (${rec.Store}).`;
-        status.className = 'status err';
-        return;
-      }
-      CURRENT_EDITING_RETURN = rec;
-      document.getElementById('ret-id').value = rec.RiderID;
-      document.getElementById('ret-editing-label').textContent = rec.RiderID + ' — ' + (rec.RiderName || '');
-      document.getElementById('ret-name-display').textContent = rec.RiderName || '';
-      document.getElementById('ret-store-display').textContent = rec.Store || '';
-      document.getElementById('ret-vendor-display').textContent = rec.Vendor || '';
-      CONFIG.returnCategories.forEach(cat => {
-        setReturnToggle(cat, isReturnedTruthy(rec[cat + 'Returned']));
-      });
-      const card = document.getElementById('ret-form-card');
-      card.style.display = 'block';
-      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      status.textContent = 'Change the Yes/No toggles below, then click Save Return Record.';
-      status.className = 'status';
     }
 
     function fmtDate(d) {
